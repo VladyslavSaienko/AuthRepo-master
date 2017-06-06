@@ -8,23 +8,44 @@ using System.Reflection;
 using IdentityServer4.EntityFramework.DbContexts;
 using IdentityServer4.EntityFramework.Mappers;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
+using StartIdentity.Models;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
 namespace StartIdentity
 {
     public class Startup
     {
+        public Startup(IHostingEnvironment env)
+        {
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(env.ContentRootPath)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true);
 
+            builder.AddEnvironmentVariables();
+            Configuration = builder.Build();
+        }
+        public IConfigurationRoot Configuration { get; }
         public void ConfigureServices(IServiceCollection services)
         {
+            var connectionString = @"server=(localdb)\mssqllocaldb;database=DataStore;trusted_connection=yes";
+            services.AddDbContext<AppContext>(options =>
+                   options.UseSqlServer(connectionString));
+            var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
+            services.AddIdentity<User, IdentityRole>()
+                .AddEntityFrameworkStores<AppContext>()
+                .AddDefaultTokenProviders();
+            
             services.AddMvc();
 
-            var connectionString = @"server=(localdb)\mssqllocaldb;database=DataStore;trusted_connection=yes";
-            var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
+            //var connectionString = @"server=(localdb)\mssqllocaldb;database=DataStore;trusted_connection=yes";
+           
 
             // configure identity server with in-memory users, but EF stores for clients and resources
             services.AddIdentityServer()
                 .AddTemporarySigningCredential()
-                .AddTestUsers(Config.GetUsers())
+                 .AddInMemoryPersistedGrants()
                 .AddConfigurationStore(builder =>
                     builder.UseSqlServer(connectionString, options =>
                         options.MigrationsAssembly(migrationsAssembly)))
@@ -38,7 +59,7 @@ namespace StartIdentity
             app.UseDeveloperExceptionPage();
             InitializeDatabase(app);
             app.UseIdentityServer();
-
+            app.UseIdentity();
             app.UseGoogleAuthentication(new GoogleOptions
             {
                 AuthenticationScheme = "Google",

@@ -21,13 +21,8 @@ namespace IdentityServer
         {
             var builder = new ConfigurationBuilder()
                 .SetBasePath(env.ContentRootPath)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true);
-
-            if (env.IsDevelopment())
-            {
-
-            }
 
             builder.AddEnvironmentVariables();
             Configuration = builder.Build();
@@ -48,19 +43,20 @@ namespace IdentityServer
 
             services.AddMvc();
 
-
             // Add application services.
             services.AddTransient<IEmailSender, AuthMessageSender>();
             services.AddTransient<ISmsSender, AuthMessageSender>();
-            // Adds IdentityServer
+
             services.AddIdentityServer()
                 .AddTemporarySigningCredential()
-                 .AddConfigurationStore(builder =>
-                    builder.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"), options =>
-                        options.MigrationsAssembly(migrationsAssembly)))
-                .AddOperationalStore(builder =>
-                    builder.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"), options =>
-                        options.MigrationsAssembly(migrationsAssembly)));
+                .AddInMemoryPersistedGrants()
+                .AddAspNetIdentity<ApplicationUser>()
+                .AddConfigurationStore(builder =>
+            builder.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"), options =>
+                options.MigrationsAssembly(migrationsAssembly)))
+        .AddOperationalStore(builder =>
+            builder.UseSqlServer(Configuration.GetConnectionString("DefaultConnection"), options =>
+                options.MigrationsAssembly(migrationsAssembly)));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -83,10 +79,17 @@ namespace IdentityServer
             app.UseStaticFiles();
 
             app.UseIdentity();
-
-            // Add external authentication middleware below. To configure them please see https://go.microsoft.com/fwlink/?LinkID=532715
-            // Adds IdentityServer
             app.UseIdentityServer();
+
+            // Add external authentication middleware below. To configure them please see http://go.microsoft.com/fwlink/?LinkID=532715
+            app.UseGoogleAuthentication(new GoogleOptions
+            {
+                AuthenticationScheme = "Google",
+                SignInScheme = "Identity.External", // this is the name of the cookie middleware registered by UseIdentity()
+                ClientId = "998042782978-s07498t8i8jas7npj4crve1skpromf37.apps.googleusercontent.com",
+                ClientSecret = "HsnwJri_53zn7VcO1Fm7THBb",
+            });
+            InitializeDatabase(app);
             app.UseMvc(routes =>
             {
                 routes.MapRoute(
@@ -102,7 +105,15 @@ namespace IdentityServer
 
                 var context = serviceScope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
                 context.Database.Migrate();
-                
+                if (!context.Clients.Any())
+                {
+                    foreach (var client in Config.GetClients())
+                    {
+                        context.Clients.Add(client.ToEntity());
+                    }
+                    context.SaveChanges();
+                }
+
 
                 if (!context.IdentityResources.Any())
                 {
@@ -123,5 +134,6 @@ namespace IdentityServer
                 }
             }
         }
+
     }
 }
